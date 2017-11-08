@@ -4,23 +4,28 @@
 #include <ctype.h>
 #include <getopt.h>
 
+#include <fstream>
 #include <vector>
+#include <string>
 using namespace std;
 
 class dict_t {
+
+#define     MAX_WORD_LEN    20
 
     public:
         dict_t(char *dict_path);
         ~dict_t();
 
-        bool find_word(char *letters);
+        bool letters_in_word(char *letters, int distance = 1);
+        bool word_in_letters(char *letters, int distance = 1);
 
     private:
-        bool find_word(int word_len, char *letters);
-        bool finer_match(char* word, char *letters);
+        enum enum_match {match_letters2word, match_word2letters};
+
+        bool find_word(int word_len, char *letters, enum_match e);
 
     private:
-#define     MAX_WORD_LEN    20
         typedef vector<char*> vecWords;
 
         char *m_path;
@@ -30,42 +35,32 @@ class dict_t {
 
 dict_t::dict_t(char *dict_path)
 {
-    FILE *f = fopen(dict_path, "r");
-    if (f == NULL) {
+    ifstream f(dict_path, ios::in);
+    if (!f.is_open()) {
         perror("Open dictionary file failed");
         exit(1);
     }
 
-    //read in diction
-    size_t size = 40;
-    char *line = (char*)malloc(size);
-    int nread;
+    //read words from dictionary
+    string line;
 
     // we use the dictionary: american-english
-    while ((nread = getline(&line, &size, f)) != EOF) {
+    while (getline(f, line)) {
         // Get rid of words like /Adirondacks's/
-        if (NULL != strchr(line, '\''))
+        if (string::npos != line.rfind('\''))
             continue;
 
-        char *p = strpbrk(line, "\n");
-        int nlen;
-
-        if (p == NULL)
-            nlen = strlen(line);
-        else
-            nlen = p - line;
-
-        if (nlen < 3 || nlen > MAX_WORD_LEN)
+        if (line.length() < 3 || line.length() > MAX_WORD_LEN)
             continue;
 
         if (!isalpha(line[0]) || !isalpha(line[1]))
             continue;
 
         //printf("%s\n", line);
-        m_words[nlen].push_back(strdup(line));
+        m_words[line.length()].push_back(strdup(line.c_str()));
     }//end while
 
-    fclose (f);
+    f.close();
 
     m_path = strdup(dict_path);
 }
@@ -85,7 +80,8 @@ dict_t::~dict_t()
     free(m_path);
 }
 
-bool dict_t::find_word(char *letters)
+
+bool dict_t::letters_in_word(char *letters, int distance)
 {
     char low[MAX_WORD_LEN+1];
     int nlen = strlen(letters);
@@ -101,79 +97,121 @@ bool dict_t::find_word(char *letters)
     low[i] = 0;
 
 
-    while (nlen < MAX_WORD_LEN && !find_word(nlen, letters)) {
+    int d = min(nlen+distance, MAX_WORD_LEN);
+    while (nlen <= d && !find_word(nlen, letters, match_letters2word)) {
         nlen++;
     }
 
     return nlen != MAX_WORD_LEN;
 }
 
+bool dict_t::word_in_letters(char *letters, int distance)
+{
+    char low[MAX_WORD_LEN+1];
+    int nlen = strlen(letters);
+    int i;
 
-bool dict_t::find_word(int word_len, char *letters)
+    //to lowercase
+    if (nlen > MAX_WORD_LEN)
+        return false;
+
+    for (i = 0; i < nlen; i++) {
+        low[i] = tolower(letters[i]);
+    }
+    low[i] = 0;
+
+
+    int d = max(nlen-distance, 2);
+    while (nlen >= d && !find_word(nlen, letters, match_word2letters)) {
+        nlen--;
+    }
+
+    return nlen != 2;
+}
+
+
+bool dict_t::find_word(int word_len, char *letters, dict_t::enum_match ematch)
 {
     vector<char*>::iterator it;
     char *word;
     bool ret = false;
 
+    int larr[26] = {0};
+    int i;
+    for (i = 0; i < strlen(letters); i++)
+        larr[letters[i]-'a']++;
+
     for (it = m_words[word_len].begin(); it != m_words[word_len].end(); it++) {
         word = *it;
 
-        int lidx = 0;
-        int widx = 0;
-        int count = 0;
+        int warr[26] = {0};
+        for (int j = 0; j < strlen(word); j++) {
+            if (word[j] < 'a')
+                warr[word[j]-'A']++;
+            else
+                warr[word[j]-'a']++;
+        }
 
-        for (int i = 0; i < strlen(letters); i++) {
-            for (int j = 0; j < word_len; j++) {
-                if (letters[i] == word[j]) {
-                    count++;
-                    break;
+        bool bmatched = true;
+        switch (ematch) {
+            case match_letters2word:
+                for (i = 0; i < 26; i++) {
+                    if (larr[i] > warr[i])
+                        bmatched = false;
                 }
-            }
+                break;
 
-            if (count == strlen(letters) && finer_match(word, letters)) {
-                printf("%s", word);
-                ret = true;
-            }
+            case match_word2letters:
+                for (i = 0; i < 26; i++) {
+                    if (warr[i] > larr[i])
+                        bmatched = false;
+                }
+                break;
+        }
+        if (bmatched) {
+            printf("%s\n", word);
+            ret = true;
         }
     }
     return ret;
 }
 
-bool dict_t::finer_match(char* word, char* letters)
+
+bool find_word(char *fdict, char *letters, int mode = 0, int distance = 2)
 {
-    int arr[26];
+    char low[MAX_WORD_LEN+1];
+    int nlen = strlen(letters);
     int i;
 
-    for (i = 0; i < 26; i++)
-        arr[i] = 0;
+    //to lowercase
+    if (nlen > MAX_WORD_LEN)
+        return false;
 
-    for (i = 0; i < strlen(letters); i++)
-        arr[letters[i]-'a']++;
-
-    for (i = 0; i < 26; i++) {
-        if (arr[i] > 1) {
-            int cnt = 0;
-            int j;
-
-            for (j = 0; j < strlen(word); j++) {
-                if (word[j] == 'a' + i)
-                    cnt++;
-            }
-
-            if (cnt < arr[i])
-                return false;
-        }
+    for (i = 0; i < nlen; i++) {
+        low[i] = tolower(letters[i]);
     }
+    low[i] = 0;
 
-    return true;
+    //start finding
+    dict_t dict(fdict);
+
+    if (mode == 0)
+        return dict.letters_in_word(letters, distance);
+    else if (mode == 1)
+        return dict.word_in_letters(letters, distance);
+    else
+        return false;
 }
+
 
 void Usage(const char *prog)
 {
     printf("Description: Extract the first letter of each word of a word list to generate an easily-rememberable word.\n"
             "\nUsage:\n"
-            "\t%s [-d path of dictionary]\n"
-            "\t [-h This help]\n"
+            "\t%s [-h This help]\n"
+            "\t [-d path of dictionary]\n"
+            "\t [-m letters_in_word or word_in_letters, l2w or w2l]\n"
+            "\t [-l the maximum distance between target word and the set of given letters]\n"
             "\t <-w a list of words>\n", prog);
 
     exit(0);
@@ -181,17 +219,28 @@ void Usage(const char *prog)
 
 int main(int argc, char* argv[])
 {
-    char *fdict;
-    char *words;
+    char *fdict = NULL;
+    char *mode = NULL;
+    char *words = NULL;
+    int maxdistance = 22;
     int opt;
 
-    while ((opt = getopt(argc, argv, "dwh")) != -1) {
+    while ((opt = getopt(argc, argv, "hd:m:l:w:")) != -1) {
         switch(opt) {
             case 'd':
-                fdict = strdup(argv[optind]);
+                fdict = strdup(optarg);
                 break;
+
+            case 'm':
+                mode = strdup(optarg);
+                break;
+
+            case 'l':
+                maxdistance = atoi(optarg);
+                break;
+
             case 'w':
-                words = strdup(argv[optind]);
+                words = strdup(optarg);
                 break;
 
             case 'h':
@@ -201,9 +250,19 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (optind >= argc) {
+    if (optind != argc) {
         Usage(argv[0]);
     }
+    if (fdict == NULL || mode == NULL || words == NULL)
+        Usage(argv[0]);
+
+    int m;
+    if (!strcasecmp("l2w", mode))
+        m = 0;
+    else if (!strcasecmp("w2l", mode))
+        m = 1;
+    else
+        Usage(argv[0]);
 
 
     //Get the first letter from each word.
@@ -215,7 +274,7 @@ int main(int argc, char* argv[])
         while (*ch != '\0' && *ch == ' ') ch++;
 
         if (isalpha(*ch)) {
-            letters[i++] = tolower(*ch);
+            letters[i++] = *ch;
             ch++;
         }
 
@@ -224,10 +283,7 @@ int main(int argc, char* argv[])
     letters[i] = 0;
 
     //printf("word list: %s\n", words);
-
-    //start finding
-    dict_t dict(fdict);
-    dict.find_word(letters);
+    find_word(fdict, letters, m, maxdistance);
 
     return 0;
 }

@@ -43,44 +43,77 @@ fdict = "dict.txt"
 
 class TestMethods(unittest.TestCase):
 
-    def letters_in_word(self, letter_word, words):
+    def letters_in_word(self, letter_word, words, distance=10):
         l = " ".join(c for c in letter_word)
-        cmd = [fbin, "-d", fdict, "-w", l]
+        cmd = [fbin, "-d", fdict, "-m", "l2w", "-l", str(distance), "-w", l]
         output = qx(cmd)
         o = output.strip().split("\n")
         self.assertEqual(o, words)
 
-    def letters_notin_word(self, letter_word):
+    def letters_notin_word(self, letter_word, distance=10):
         l = " ".join(c for c in letter_word)
-        cmd = [fbin, "-d", fdict, "-w", l]
+        cmd = [fbin, "-d", fdict, "-m", "l2w", "-l", str(distance), "-w", l]
         output = qx(cmd)
         o = output.strip().split("\n")
         self.assertEqual(o, [""])
 
-    def test_exactly(self):
+    def test_l2w_exactly(self):
         w = "name"
         self.letters_in_word(w, ["name"])
 
         w = "borrow"
         self.letters_in_word(w, ["borrow"])
 
-    def test_contain(self):
+    def test_l2w_contain(self):
         w = "ome"
         self.letters_in_word(w, ["home"])
 
         w = "bow"
-        self.letters_in_word(w, ["borrow"])
+        self.letters_in_word(w, ["borrow"], 3)
+        self.letters_notin_word(w, 2)
 
-    def test_contain2(self):
+    def test_l2w_contain2(self):
         w = "me"
-        self.letters_in_word(w, ["name", "home"])
+        self.letters_in_word(w, ["name", "home"], 2)
+        self.letters_notin_word(w, 1)
 
-    def test_notcontain(self):
+    def test_l2w_notcontain(self):
         w = "ab"
         self.letters_notin_word(w)
 
         w = "borroww"
         self.letters_notin_word(w)
+
+    def word_in_letters(self, letter_word, words, distance=10):
+        l = " ".join(c for c in letter_word)
+        cmd = [fbin, "-d", fdict, "-m", "w2l", "-l", str(distance), "-w", l]
+        output = qx(cmd)
+        o = output.strip().split("\n")
+        self.assertEqual(o, words)
+
+    def word_notin_letters(self, letter_word, distance=10):
+        l = " ".join(c for c in letter_word)
+        cmd = [fbin, "-d", fdict, "-m", "w2l", "-l", str(distance), "-w", l]
+        output = qx(cmd)
+        o = output.strip().split("\n")
+        self.assertEqual(o, [""])
+
+    def test_w2l_exactly(self):
+        w = "name"
+        self.word_in_letters(w, ["name"])
+
+        w = "borrow"
+        self.word_in_letters(w, ["borrow"])
+
+    def test_w2l_contain(self):
+        w = "homeww"
+        self.word_in_letters(w, ["home"], 2)
+        self.word_notin_letters(w, 1)
+
+    def test_w2l_contain2(self):
+        w = "nameho"
+        self.word_in_letters(w, ["name", "home"], 2)
+        self.word_notin_letters(w, 1)
 
     def test_zzzz(self):
         if os.path.exists(fdict):
